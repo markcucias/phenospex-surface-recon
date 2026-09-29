@@ -1,0 +1,16 @@
+# Build / environment
+build/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Data and large outputs (the input PLY is ~100 MB; GitHub rejects files > 100 MB)
+data/*.ply
+out/
+
+# Editors / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/

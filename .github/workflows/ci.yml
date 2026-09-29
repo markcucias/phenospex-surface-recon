@@ -1,0 +1,29 @@
+# Builds the C++ tool on Linux and macOS and runs it on a small synthetic cloud.
+# Proves the "buildable and runnable on Linux or macOS" requirement on every push.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build-and-smoke-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python deps for the test-data generator
+        run: pip install numpy plyfile
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+      - name: Smoke test
+        run: |
+          mkdir -p out
+          python tests/make_synthetic_ply.py out/synthetic.ply
+          ./build/reconstruct out/synthetic.ply out/synthetic_mesh.ply
+          test -s out/synthetic_mesh.ply
