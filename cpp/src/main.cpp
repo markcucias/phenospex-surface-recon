@@ -1,7 +1,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "mesher.hpp"
 #include "ply_io.hpp"
@@ -14,8 +16,8 @@ int main(int argc, char** argv) {
     try {
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
-            if (arg == "--max-edge" && i + 1 < argc) {
-                maxEdge = std::atof(argv[++i]);
+            if (arg == "--max-edge") {
+                maxEdge = i + 1 < argc ? std::atof(argv[++i]) : 0;
             } else if (input.empty()) {
                 input = arg;
             } else if (output.empty()) {
@@ -24,7 +26,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("unexpected argument: " + arg);
             }
         }
-        if (input.empty() || output.empty() || maxEdge <= 0) {
+        if (input.empty() || output.empty() || !(maxEdge > 0)) {
             std::fprintf(stderr, "usage: %s <input.ply> <output.ply> [--max-edge MM]\n", argv[0]);
             return 2;
         }

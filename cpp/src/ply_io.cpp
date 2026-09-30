@@ -54,6 +54,7 @@ void writeBinary(std::ofstream& out, T value) {
 // 99.9th percentile of all colour values; used as "full brightness" so a few bright spots
 // don't make the whole mesh dark.
 int colourScale(const std::vector<Point>& points) {
+    if (points.empty()) return 1;
     std::vector<uint16_t> values;
     for (const Point& p : points) {
         values.push_back(p.red);
