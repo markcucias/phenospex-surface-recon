@@ -1,47 +1,84 @@
 # Development notes
 
-My working log for this exercise: how I approached it, what I learned along the way, and why I made
-the decisions I made. It is written as I go, so early entries can contain assumptions that later turn
-out to be wrong — later entries correct them. The README is the cleaned-up summary of this file.
+My log of how I worked on this exercise: what I did, what I thought, and where I was wrong.
+The README is the clean summary.
 
 ## 1. Getting oriented
 
-### Refreshing the basics
-Before touching the data, I needed to refresh what a point cloud and a mesh actually are. A point cloud
-is a set of loose 3D samples without any connections between them; a mesh adds triangles built from
-vertices and edges. I read about why triangles are used, what properties a good mesh should have, and
-what information usually comes with a scan.
+- Refreshed what a point cloud and a mesh are. A point cloud is loose 3D points, a mesh adds
+  triangles between them.
+- Read about the usual reconstruction algorithms (Poisson, Ball Pivoting, ...), filtering and
+  outliers, and typical problems like thin leaves and missing data.
+- Picked the tools: Python for exploring and prototyping, C++ for the actual tool.
+- Set up the repo with CMake, a Makefile for shortcuts and GitHub CI that builds on Linux and macOS.
 
-### Reading the PLY header
-Next, I looked at the header of the supplied file to understand what data I actually have, and from
-that, what the scanning device looks like. The scene was captured by two PlantEye scanner heads, and
-for every point the file stores which head measured it (`scanner_id`), the scan line it belongs to
-(`profile`) and its position along that line (`x_pos`), in addition to x, y, z and four reflectance
-channels (red, green, blue, NIR).
+### The PLY header
+Each point has x, y, z, `scanner_id`, `profile`, `x_pos` and red/green/blue/NIR. The header shows
+two PlantEye heads. My first thought: if `x_pos` is really the position on the laser line, I already
+have the points and only need to connect them into triangles.
 
-This is beneficial for me: if my assumption about `x_pos` is correct, I don't need to calculate the
-positions of the points, since I already have them. I just need to properly create triangles out of
-them.
+Questions I had:
+- Is `x_pos` the column on the laser line?
+- How are the two scanners placed?
+- Does z point up or down?
+- Why does scanner 0 have almost twice as many points?
 
-### Surveying the algorithms
-I read about the algorithms that are usually used for surface reconstruction. I won't be implementing
-them, but it is good to understand what each one does, so that I know which one fits this data.
+## 2. First look at the data
 
-I also read about best practices for filtering points: what outliers are, how to decide which points to
-remove, the usual problems I can run into (thin leaves, outliers, etc.), and how to deal with them.
+![Inspection plots](../results/figures/inspection.png)
 
-### Tools
-I looked at which tools are helpful for this kind of work. Python and its libraries are better for
-prototyping and exploration; C++ is what I will use for the actual implementation.
+What I first thought:
+- The red scanner has more points.
+- The blue one has a weird stripe on the left.
+- Every (scanner, profile, x_pos) is unique, so the grid idea works.
+- The nearest-neighbour distances are one peak, as expected.
 
-### Project setup
-I revised how to set up and structure a project and where everything should live. With AI assistance I
-set up a Makefile and a CI workflow so that testing is easier and the result is consistent across all
-platforms and devices, which ensures the result's correctness.
+What it actually is:
+- Blue is scanner 0 and it has more points (2.06 M vs 1.14 M). Overlapping scatter plots can't show
+  counts.
+- The stripe is a vertical wall at x ≈ −560, only seen by scanner 0.
+- z points up. The tray is at z ≈ 1785 and the plants are above it.
+- The scanners look sideways across the tray: scanner 0 from the right, scanner 1 from the left.
+- y only depends on the scan line (4,864 unique y values = number of profiles of both scanners).
+- Unique cells is a good sign, but it doesn't yet prove that grid neighbours are close in 3D.
+- The distance plot has two peaks: ~0.69 mm (next point on the laser line) and ~0.81 mm (next scan
+  line, 1980 mm / 2431 profiles).
+- There are a few hundred outlier points around z ≈ 1415, far below the tray.
+- Colours are 16-bit but only go up to ~11,000, so dividing by 65,535 would give a nearly black mesh.
 
-## Open questions (to verify with the data)
+### Checked in CloudCompare
+I opened the scan in CloudCompare and rotated around it. One plant stands much higher than the
+other, and from another angle a third, small plant is visible.
 
-- Is `x_pos` really the pixel column along the laser line?
-- How are the two scanner heads arranged, and where do their views overlap?
-- Does z point up (height) or down (distance from the scanner)?
-- Why does scanner 0 have almost twice as many points as scanner 1?
+![Side view in CloudCompare](../results/figures/cloudcompare_side.png)
+![Oblique view in CloudCompare](../results/figures/cloudcompare_angle.png)
+
+## 3. Testing the grid
+
+For each scanner I built the (profile, x_pos) grid and measured the 3D distance from each point to
+the next cell on the same laser line and on the next scan line.
+
+![Distances between grid neighbours](../results/figures/grid_neighbours.png)
+
+| | scanner 0 | scanner 1 |
+|---|---|---|
+| median distance, same laser line | 0.75 mm | 0.67 mm |
+| median distance, next scan line | 0.83 mm | 0.82 mm |
+| 90 % of same-line pairs below | 1.79 mm | 1.14 mm |
+| tray height / noise (std) | 1786.2 / 0.47 mm | 1787.2 / 0.50 mm |
+
+What I first thought:
+- The 90 % value of 1.79 mm is the important number, so pairs further apart than ~2–3.5 mm mean a
+  jump to another surface and shouldn't be connected.
+- A 0.94 mm height difference between the scanners is small.
+
+What it actually means:
+- The medians match the expected spacing, so grid neighbours really are neighbours in 3D.
+- Cutting at a percentile would throw away real surface. The 1.79 mm comes from the wall: scanner 0
+  sees it at a steep angle, so its points are further apart. Scanner 1 doesn't see the wall.
+- The better place for the threshold is the dip in the histogram: real neighbours stop at ~5 mm,
+  jumps (leaf edge to tray) start at ~10 mm. Starting value: 5 mm.
+- 0.94 mm is about two times the noise, so the scanners really see the tray at different heights.
+  Where both scanners see the same area, there will be two layers on top of each other.
+- The noise (~0.5 mm) is almost as big as the point spacing (~0.75 mm), so the raw surface will look
+  rough.

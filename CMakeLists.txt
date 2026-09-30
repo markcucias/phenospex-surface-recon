@@ -14,6 +14,8 @@ endif()
 # ---- Main executable --------------------------------------------------------
 add_executable(reconstruct
   cpp/src/main.cpp
+  cpp/src/ply_io.cpp
+  cpp/src/mesher.cpp
 )
 
 # happly is a single-header PLY reader/writer (MIT), vendored so the build needs no network.
